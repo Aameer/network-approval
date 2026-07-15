@@ -17,9 +17,10 @@ def me(request: Request):
 
 
 @router.post("/dev-login")
-def dev_login(request: Request):
+def dev_login(request: Request, role: str = "admin"):
     # TODO: replace with Google OIDC callback — verify id_token, enforce ALLOWED_LOGIN_DOMAIN.
-    user = {"email": "aameer@8thloop.com", "name": "Aameer", "role": "operator"}
+    # role defaults to admin for the demo; pass ?role=operator to test the non-admin gating.
+    user = {"email": "aameer@8thloop.com", "name": "Aameer", "role": role}
     request.session["user"] = user
     return {"authenticated": True, "user": user, "note": "stub login — Google OIDC replaces this"}
 

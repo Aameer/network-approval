@@ -4,6 +4,7 @@ from sqlmodel import Session, select
 
 from ..db import get_session
 from ..models import NetworkApplication, Site
+from ..services import vault
 
 router = APIRouter(prefix="/api", tags=["portfolio"])
 
@@ -14,6 +15,7 @@ def portfolio(sandbox: bool = False, session: Session = Depends(get_session)):
     if sandbox:
         q = q.where(Site.is_sandbox == True)  # noqa: E712
     sites = session.exec(q.order_by(Site.is_sandbox.desc(), Site.domain)).all()
+    secret_ids = vault.sites_with_secrets()
 
     out = []
     for site in sites:
@@ -32,9 +34,10 @@ def portfolio(sandbox: bool = False, session: Session = Depends(get_session)):
             "clickout_moved": site.clickout_moved,
             "mcc_id": site.mcc_id,
             "ga4_property_id": site.ga4_property_id,
+            "has_secrets": site.id in secret_ids,
             "is_sandbox": site.is_sandbox,
             "networks": [
-                {"network": a.network_name, "status": a.status, "publisher_id": a.publisher_id}
+                {"id": a.id, "network": a.network_name, "status": a.status.value, "publisher_id": a.publisher_id}
                 for a in apps
             ],
         })

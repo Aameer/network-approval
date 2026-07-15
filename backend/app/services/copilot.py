@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 
 from ..config import ANTHROPIC_API_KEY, COPILOT_MODEL
-from .tools import DISPATCH, TOOLS
+from .tools import DISPATCH, SECRET_DISPATCH, SECRET_TOOL_NAMES, SECRET_TOOLS, TOOLS
 
 SYSTEM = (
     "You are the C3 copilot — the assistant inside Curatte's Central Command & Control "
@@ -20,19 +20,31 @@ SYSTEM = (
     "that creates a gated dry-run a human approves in the console; you cannot approve or "
     "submit yourself. The 3 sandbox sites are dailyreviewtoday.com (MUX), "
     "saversheaven.com, and dailyessentialstips.com; the live PoC target is applying "
-    "dailyreviewtoday to SourceKnowledge."
+    "dailyreviewtoday to SourceKnowledge. "
+    "If the signed-in user is an ADMIN you additionally have get_site_secrets and "
+    "find_sites_by_secret to answer questions about MCC passwords or payment cards "
+    "(e.g. which sites use a card ending 8435) — every such access is audited. If a "
+    "non-admin asks for secrets, refuse and say it requires admin access."
 )
 
 MAX_STEPS = 6
 
 
-def chat(messages: list[dict]) -> dict:
-    """messages: [{role:'user'|'assistant', content:str}]. Returns {reply, tools_used}."""
+def chat(messages: list[dict], user: dict | None = None) -> dict:
+    """messages: [{role, content}]. user: {email, role} or None. Returns {reply, tools_used}.
+
+    The copilot inherits the user's scope: secret tools are offered ONLY to admins, and
+    enforced again at execution (defense in depth) — copilot can never exceed its human.
+    """
     if not ANTHROPIC_API_KEY:
         return {"reply": None,
                 "error": "ANTHROPIC_API_KEY not set in backend/.env — copy it from coupon-engine/.env.",
                 "tools_used": []}
     import anthropic  # imported lazily so the app boots without the dep during early setup
+
+    is_admin = (user or {}).get("role") == "admin"
+    actor = (user or {}).get("email", "copilot")
+    tools = TOOLS + (SECRET_TOOLS if is_admin else [])
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     convo = [{"role": m["role"], "content": m["content"]} for m in messages]
@@ -40,15 +52,21 @@ def chat(messages: list[dict]) -> dict:
 
     for _ in range(MAX_STEPS):
         resp = client.messages.create(
-            model=COPILOT_MODEL, max_tokens=1024, system=SYSTEM, tools=TOOLS, messages=convo,
+            model=COPILOT_MODEL, max_tokens=1024, system=SYSTEM, tools=tools, messages=convo,
         )
         if resp.stop_reason == "tool_use":
             convo.append({"role": "assistant", "content": [b.model_dump() for b in resp.content]})
             results = []
             for block in resp.content:
                 if block.type == "tool_use":
-                    fn = DISPATCH.get(block.name)
-                    out = fn(**(block.input or {})) if fn else {"error": f"unknown tool {block.name}"}
+                    if block.name in SECRET_TOOL_NAMES:
+                        if not is_admin:
+                            out = {"error": "access denied — secrets require admin"}
+                        else:
+                            out = SECRET_DISPATCH[block.name](**(block.input or {}), actor=actor)
+                    else:
+                        fn = DISPATCH.get(block.name)
+                        out = fn(**(block.input or {})) if fn else {"error": f"unknown tool {block.name}"}
                     tools_used.append({"tool": block.name, "input": block.input})
                     results.append({
                         "type": "tool_result",

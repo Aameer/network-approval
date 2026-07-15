@@ -1,5 +1,5 @@
 """Copilot chat endpoint."""
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from ..services import copilot
@@ -17,5 +17,6 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/chat")
-def chat(req: ChatRequest):
-    return copilot.chat([m.model_dump() for m in req.messages])
+def chat(req: ChatRequest, request: Request):
+    user = request.session.get("user")
+    return copilot.chat([m.model_dump() for m in req.messages], user)

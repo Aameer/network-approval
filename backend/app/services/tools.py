@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from ..db import engine
 from ..models import NetworkApplication, Site
-from . import gcms
+from . import gcms, vault
 from .apply import create_apply_run
 
 
@@ -114,3 +114,36 @@ DISPATCH = {
     "get_traffic": get_traffic,
     "apply_to_network": apply_to_network,
 }
+
+# --- ADMIN-ONLY secret tools (added to the copilot's belt only when the user is admin) ---
+SECRET_TOOLS = [
+    {
+        "name": "get_site_secrets",
+        "description": "ADMIN ONLY. Return the decrypted secrets (MCC admin password, payment "
+                       "card, payment link) for one site. Audited on every access.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"domain": {"type": "string"}},
+            "required": ["domain"],
+        },
+    },
+    {
+        "name": "find_sites_by_secret",
+        "description": "ADMIN ONLY. Find sites whose secret field contains a value — e.g. which "
+                       "sites use a payment card ending 8435 (field=payment_profile_card, "
+                       "contains='8435'). Audited.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "field": {"type": "string", "enum": vault.SECRET_FIELDS},
+                "contains": {"type": "string"},
+            },
+            "required": ["field", "contains"],
+        },
+    },
+]
+SECRET_DISPATCH = {
+    "get_site_secrets": vault.get_site_secrets,
+    "find_sites_by_secret": vault.find_sites_by_secret,
+}
+SECRET_TOOL_NAMES = set(SECRET_DISPATCH)

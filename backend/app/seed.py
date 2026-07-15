@@ -9,7 +9,8 @@ import os
 from sqlmodel import Session, select
 
 from .db import engine, init_db
-from .models import ApplicationStatus, AuditLog, NetworkApplication, Site
+from .models import ApplicationStatus, AuditLog, NetworkApplication, Site, SiteSecret
+from .services import vault
 
 _DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 # Prefer the real (git-ignored) inventory; fall back to the committed sanitized sample.
@@ -98,6 +99,12 @@ def run():
                         status=ApplicationStatus(st),
                         publisher_id=(f"PUB-{1000 + site.id}" if st == "approved" else None),
                     ))
+                # store the sheet's secret columns encrypted (never plaintext)
+                if vault.enabled():
+                    for sf in vault.SECRET_FIELDS:
+                        val = _clean(row.get(sf))
+                        if val:
+                            s.add(SiteSecret(site_id=site.id, field=sf, value_enc=vault.encrypt(val)))
                 count += 1
 
         s.add(AuditLog(

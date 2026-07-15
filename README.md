@@ -27,9 +27,9 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env          # fill in as creds arrive
 python -m app.seed            # seed registry from data/portfolio_seed.csv
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8008
 ```
-Check: `curl localhost:8000/health` · `curl localhost:8000/api/portfolio?sandbox=true`
+Check: `curl 127.0.0.1:8008/health` · `curl 127.0.0.1:8008/api/portfolio?sandbox=true`
 
 ### Frontend (Next.js console)
 ```bash

@@ -17,3 +17,4 @@ GCMS_USERNAME = os.getenv("GCMS_USERNAME", "")
 GCMS_PASSWORD = os.getenv("GCMS_PASSWORD", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 COPILOT_MODEL = os.getenv("COPILOT_MODEL", "claude-sonnet-5")
+SECRETS_KEY = os.getenv("SECRETS_KEY", "")  # Fernet key; production -> KMS/secrets manager
