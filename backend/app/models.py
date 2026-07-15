@@ -1,0 +1,81 @@
+"""C3 data model — the greenfield network-approval state C3 owns.
+
+C3 is the source of truth for approval *workflow* state; GCMS stays the authority
+on site/product truth (read via GraphQL). See the build plan.
+"""
+from datetime import date, datetime
+from enum import Enum
+from typing import Optional
+
+from sqlmodel import Field, SQLModel
+
+
+class ApplicationStatus(str, Enum):
+    not_applied = "not_applied"
+    applied = "applied"
+    awaiting = "awaiting"
+    approved = "approved"
+    rejected = "rejected"
+    re_applied = "re_applied"
+
+
+class Site(SQLModel, table=True):
+    """A property in the portfolio registry (seeded from the inventory sheet)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    domain: str = Field(index=True, unique=True)
+    holding_company: Optional[str] = None   # the MCC / holding co — one inbox + vault per company
+    site_category: Optional[str] = None
+    website_status: Optional[str] = None
+    repo: Optional[str] = None
+    vercel_project: Optional[str] = None
+    ga4_property_id: Optional[str] = None
+    phase: int = 0                          # 0..3 playbook phase
+    is_sandbox: bool = False
+    notes: Optional[str] = None
+
+
+class NetworkApplication(SQLModel, table=True):
+    """One (site x affiliate-network) application lifecycle — C3 owns this."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    site_id: int = Field(foreign_key="site.id", index=True)
+    network_name: str
+    status: ApplicationStatus = Field(default=ApplicationStatus.not_applied)
+    publisher_id: Optional[str] = None       # settled outcome (services pull this from C3)
+    credentials_ref: Optional[str] = None    # vault pointer, never the secret
+    submission_date: Optional[date] = None
+    response_date: Optional[date] = None
+    next_followup_date: Optional[date] = None
+    rejection_reason: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class WorkflowRun(SQLModel, table=True):
+    """A durable run of a gated action (apply, parse-inbox, ...)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    site_domain: str
+    network_name: Optional[str] = None
+    kind: str                                # apply / parse_inbox / milestone
+    state: str = "created"                   # created/dry_run/awaiting_approval/running/done/failed
+    dry_run_plan: Optional[str] = None       # JSON string
+    created_by: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AuditLog(SQLModel, table=True):
+    """Every act crosses the policy boundary and lands here — attributable, timestamped."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    actor: str                               # user email or agent name
+    actor_kind: str = "human"                # human / agent / system
+    action: str
+    target: Optional[str] = None
+    detail: Optional[str] = None             # JSON
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True, unique=True)
+    name: Optional[str] = None
+    role: str = "operator"
+    created_at: datetime = Field(default_factory=datetime.utcnow)

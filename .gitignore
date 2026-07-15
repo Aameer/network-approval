@@ -1,0 +1,17 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.db
+# env
+.env
+.env.local
+# node / next
+node_modules/
+.next/
+# os
+.DS_Store
+
+# sensitive: real portfolio inventory has MCC emails/passwords/payment info — provide out of band
+backend/data/portfolio_seed.csv

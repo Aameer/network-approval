@@ -1,0 +1,10 @@
+:root {
+  --ground:#0c1016; --paper:#161c26; --ink:#e7edf6; --muted:#93a1b6; --line:#28323f;
+  --c3:#f0a95f; --human:#41c39a; --agent:#a78dff; --svc:#84a6d8; --ext:#8492a5;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--ground); color:var(--ink); font-family:var(--sans); -webkit-font-smoothing:antialiased; }
+a { color: inherit; }
+.mono { font-family: var(--mono); }

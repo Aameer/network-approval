@@ -1,0 +1,6 @@
+domain,site_category,mcc_name,account_name,website_status,repo_name,vercel_project_name,ga4_property_id,_notes
+dailyreviewtoday.com,Content / Redirect,MUX MCC,dailyreviewtoday-mux,Live,production-mux-sites,dailyreviewtoday-mux,524894814,sandbox
+saversheaven.com,Content / Redirect,Curatte,saversheaven-innova8e,,production-innova8e-sites,saversheaven-innova8e,526496223,sandbox
+dailyessentialstips.com,Content / Redirect,Innova8e INC,dailyessentialtips-innova8e,,production-innova8e-sites,dailyessentialtips-innova8e,,sandbox
+couponboa.com,Old PPC / Redirect,Innova8e INC,couponboa,Live,next-ssm-v1,couponboa,4435,
+topvouchercoupon.com,Content / Redirect,8th Loop Venture PK,topvouchercoupon,Live,naqi_and_co,topvouchercoupon,4430,
