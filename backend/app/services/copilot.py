@@ -3,6 +3,8 @@
 PoC scope: read-only. The copilot answers portfolio questions by calling tools; it
 cannot act yet. When act tools land, they route through the approval gate, not here.
 """
+from __future__ import annotations
+
 import json
 
 from ..config import ANTHROPIC_API_KEY, COPILOT_MODEL

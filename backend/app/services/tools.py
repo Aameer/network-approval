@@ -3,6 +3,8 @@
 Act tools (apply_to_network, set_status) land next — they'll return a dry-run and
 require approval before executing, and every act writes an AuditLog entry.
 """
+from __future__ import annotations
+
 from sqlmodel import Session, select
 
 from ..db import engine
