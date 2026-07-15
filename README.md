@@ -40,13 +40,17 @@ npm run dev          # http://localhost:3000  (proxies /api → :8000)
 
 ## Status
 
-- [x] Portfolio registry (SQLite, seeded from the inventory sheet)
-- [x] Read API: `/api/portfolio`, `/api/sites/{domain}`, `/api/audit`
-- [x] Console dashboard (sandbox + full portfolio, network status chips)
+- [x] Portfolio registry (SQLite, all sheet columns except 3 secrets + raw JSON)
+- [x] Read API: `/api/portfolio`, `/api/sites/{domain}`, `/api/audit`, `/api/workflows`
+- [x] Console dashboard (sandbox + full portfolio, network status chips) + copilot chat
+- [x] Copilot: Claude tool-use loop — read_portfolio, get_site (GCMS), get_traffic, apply_to_network (propose)
+- [x] Act-gate: propose dry-run → identity-gated human approve → status flips → audit (real submission STUBBED)
+- [x] Edit/override: gated + audited `PATCH /api/sites/{domain}`, `PATCH /api/applications/{id}`
 - [x] Auth stub (swap in Google OIDC — reuse the 8thloop GCP project)
-- [ ] Copilot (Claude tool-use loop) + tool belt
-- [ ] Act-gate UI (dry-run → approve) + real apply agent (Skyvern)
+- [ ] Console UI for approvals + inline edit (backend done; drive via /docs meanwhile)
+- [ ] Real apply agent (Skyvern) — swap `apply._execute_apply` when creds land
 - [ ] Inbox parser (Gmail) → Publisher ID
-- [ ] GCMS GraphQL live reads
+- [ ] Live GCMS reads (drop GCMS creds into backend/.env to enable)
+- [ ] Read/write RBAC (row + column scopes) — production step
 
 See the build plan artifact for the full milestone map.

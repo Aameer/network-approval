@@ -26,6 +26,12 @@ def portfolio(sandbox: bool = False, session: Session = Depends(get_session)):
             "phase": site.phase,
             "category": site.site_category,
             "status": site.website_status,
+            "country": site.country,
+            "website_type": site.website_type,
+            "redirection": site.redirection_status,
+            "clickout_moved": site.clickout_moved,
+            "mcc_id": site.mcc_id,
+            "ga4_property_id": site.ga4_property_id,
             "is_sandbox": site.is_sandbox,
             "networks": [
                 {"network": a.network_name, "status": a.status, "publisher_id": a.publisher_id}

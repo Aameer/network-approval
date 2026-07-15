@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 from ..db import engine
 from ..models import NetworkApplication, Site
 from . import gcms
+from .apply import create_apply_run
 
 
 def read_portfolio(sandbox_only: bool = False, holding_company: str | None = None) -> dict:
@@ -53,6 +54,11 @@ def get_traffic(domain: str) -> dict:
     }
 
 
+def apply_to_network(domain: str, network: str) -> dict:
+    """PROPOSE applying a site to a network. Creates a GATED dry-run for human approval — does NOT submit."""
+    return create_apply_run(domain, network, created_by="copilot")
+
+
 # --- Anthropic tool schemas ---
 TOOLS = [
     {
@@ -86,6 +92,25 @@ TOOLS = [
             "required": ["domain"],
         },
     },
+    {
+        "name": "apply_to_network",
+        "description": "PROPOSE applying a site to an affiliate network. Creates a gated dry-run "
+                       "(the application plan) that a human must approve in the console. Does NOT "
+                       "submit and cannot self-approve. Returns the plan + workflow_id.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string", "description": "e.g. dailyreviewtoday.com"},
+                "network": {"type": "string", "description": "e.g. SourceKnowledge"},
+            },
+            "required": ["domain", "network"],
+        },
+    },
 ]
 
-DISPATCH = {"read_portfolio": read_portfolio, "get_site": get_site, "get_traffic": get_traffic}
+DISPATCH = {
+    "read_portfolio": read_portfolio,
+    "get_site": get_site,
+    "get_traffic": get_traffic,
+    "apply_to_network": apply_to_network,
+}

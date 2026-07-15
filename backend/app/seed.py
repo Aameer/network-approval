@@ -19,6 +19,9 @@ if not os.path.exists(DATA):
 
 SANDBOX = {"dailyreviewtoday.com", "saversheaven.com", "dailyessentialstips.com"}
 
+# Never store these in the C3 DB.
+SENSITIVE = {"mcc_admin_password", "payment_profile_card", "payment_profile_link"}
+
 # Known network state for the sandbox trio (from the playbook) so the demo dashboard is real.
 SANDBOX_APPS = {
     "dailyreviewtoday.com": {
@@ -55,17 +58,35 @@ def run():
                 if not domain:
                     continue
                 hc = _clean(row.get("mcc_name")) or _clean(row.get("account_name"))
+                g = lambda col: _clean(row.get(col)) or None  # noqa: E731
+                raw = {k: v for k, v in row.items() if k not in SENSITIVE and _clean(v)}
                 site = Site(
                     domain=domain,
                     holding_company=hc or None,
-                    site_category=_clean(row.get("site_category")) or None,
-                    website_status=_clean(row.get("website_status")) or None,
-                    repo=_clean(row.get("repo_name")) or None,
-                    vercel_project=_clean(row.get("vercel_project_name")) or None,
-                    ga4_property_id=_clean(row.get("ga4_property_id")) or None,
+                    site_category=g("site_category"),
+                    website_status=g("website_status"),
+                    repo=g("repo_name"),
+                    repo_link=g("repo_link"),
+                    repo_criticality=g("repo_criticality"),
+                    repo_status=g("repo_status"),
+                    vercel_project=g("vercel_project_name"),
+                    ga4_property_id=g("ga4_property_id"),
+                    persona=g("Persona"),
+                    country=g("country"),
+                    mcc_id=g("mcc_id"),
+                    mcc_admin_email=g("mcc_admin_email"),
+                    website_type=g("website_type"),
+                    redirection_status=g("redirection_status"),
+                    clickout_moved=g("clickout_moved"),
+                    wct_user_website_id=g("wct_user_website_id"),
+                    gtm_tag=g("gtm_tag"),
+                    registered_on=g("registered_on"),
+                    domain_expiry=g("domain_expiry"),
+                    privacy_protection=g("privacy_protection"),
                     is_sandbox=domain in SANDBOX,
                     phase=1 if domain in SANDBOX else 0,
-                    notes=_clean(row.get("_notes")) or None,
+                    notes=g("_notes"),
+                    raw=json.dumps(raw, ensure_ascii=False),
                 )
                 s.add(site)
                 s.flush()  # assign site.id
