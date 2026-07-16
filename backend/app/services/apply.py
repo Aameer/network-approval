@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from ..db import engine
@@ -44,6 +45,19 @@ def build_dry_run(domain: str, network: str) -> dict:
 
 
 def create_apply_run(domain: str, network: str, created_by: str = "copilot") -> dict:
+    # Canonicalize the network name to an existing application (case-insensitive),
+    # so "admitad" updates the seeded "Admitad" instead of creating a duplicate.
+    with Session(engine) as s:
+        site = s.exec(select(Site).where(Site.domain == domain)).first()
+        if not site:
+            return {"error": f"unknown site {domain}"}
+        existing = s.exec(select(NetworkApplication).where(
+            NetworkApplication.site_id == site.id,
+            func.lower(NetworkApplication.network_name) == network.lower(),
+        )).first()
+        if existing:
+            network = existing.network_name
+
     plan = build_dry_run(domain, network)
     if "error" in plan:
         return plan
@@ -91,7 +105,7 @@ def approve_run(run_id: int, approver: str) -> dict:
         site = s.exec(select(Site).where(Site.domain == run.site_domain)).first()
         app = s.exec(select(NetworkApplication).where(
             NetworkApplication.site_id == site.id,
-            NetworkApplication.network_name == run.network_name,
+            func.lower(NetworkApplication.network_name) == run.network_name.lower(),
         )).first()
         if not app:
             app = NetworkApplication(site_id=site.id, network_name=run.network_name)

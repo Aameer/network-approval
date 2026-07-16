@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from ..db import engine
 from ..models import NetworkApplication, Site
-from . import gcms, vault
+from . import gcms, parser, traffic, vault
 from .apply import create_apply_run
 
 
@@ -45,18 +45,18 @@ def get_site(domain: str) -> dict:
 
 
 def get_traffic(domain: str) -> dict:
-    """Traffic for a site. STUBBED in the PoC — wires to ads-ops-hub / BigQuery facts_performance."""
-    return {
-        "domain": domain,
-        "source": "stub",
-        "sessions_30d": None,
-        "note": "traffic read is stubbed for the PoC; production reads facts_performance in BigQuery",
-    }
+    """Real traffic — GA4 export in BigQuery (degrades gracefully if BQ not configured)."""
+    return traffic.get_traffic(domain)
 
 
 def apply_to_network(domain: str, network: str) -> dict:
     """PROPOSE applying a site to a network. Creates a GATED dry-run for human approval — does NOT submit."""
     return create_apply_run(domain, network, created_by="copilot")
+
+
+def parse_inbox(limit: int = 15) -> dict:
+    """Read the holding-co inbox (IMAP) for network approvals + extract Publisher IDs."""
+    return parser.scan_inbox(limit)
 
 
 # --- Anthropic tool schemas ---
@@ -106,6 +106,16 @@ TOOLS = [
             "required": ["domain", "network"],
         },
     },
+    {
+        "name": "parse_inbox",
+        "description": "Read the holding-company inbox (IMAP) for affiliate-network approval emails "
+                       "and extract candidate Publisher IDs.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "description": "how many recent emails to scan"}},
+            "required": [],
+        },
+    },
 ]
 
 DISPATCH = {
@@ -113,6 +123,7 @@ DISPATCH = {
     "get_site": get_site,
     "get_traffic": get_traffic,
     "apply_to_network": apply_to_network,
+    "parse_inbox": parse_inbox,
 }
 
 # --- ADMIN-ONLY secret tools (added to the copilot's belt only when the user is admin) ---

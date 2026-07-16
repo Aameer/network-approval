@@ -23,6 +23,9 @@ SANDBOX = {"dailyreviewtoday.com", "saversheaven.com", "dailyessentialstips.com"
 # Never store these in the C3 DB.
 SENSITIVE = {"mcc_admin_password", "payment_profile_card", "payment_profile_link"}
 
+# Correct GA4 property ids (from the dg GA4 inventory) — the portfolio sheet leaves these blank.
+SANDBOX_GA4 = {"dailyreviewtoday.com": "524894814", "saversheaven.com": "526496223"}
+
 # Known network state for the sandbox trio (from the playbook) so the demo dashboard is real.
 SANDBOX_APPS = {
     "dailyreviewtoday.com": {
@@ -71,7 +74,7 @@ def run():
                     repo_criticality=g("repo_criticality"),
                     repo_status=g("repo_status"),
                     vercel_project=g("vercel_project_name"),
-                    ga4_property_id=g("ga4_property_id"),
+                    ga4_property_id=SANDBOX_GA4.get(domain) or g("ga4_property_id"),
                     persona=g("Persona"),
                     country=g("country"),
                     mcc_id=g("mcc_id"),

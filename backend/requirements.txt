@@ -7,3 +7,5 @@ itsdangerous>=2.1
 python-multipart>=0.0.9
 anthropic>=0.40
 cryptography>=42.0
+apscheduler>=3.10
+google-cloud-bigquery>=3.20

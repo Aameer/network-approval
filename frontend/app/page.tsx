@@ -74,7 +74,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <Copilot />
+      <Copilot onChange={load} />
       <Approvals flows={flows} onChange={load} />
 
       {loading ? <p style={{ color: "var(--muted)" }}>Loading…</p> : (
@@ -198,7 +198,7 @@ function AuditPanel({ audit }: { audit: Audit[] }) {
 }
 
 type ChatMsg = { role: "user" | "assistant"; content: string; tools?: string[] };
-function Copilot() {
+function Copilot({ onChange }: { onChange: () => void }) {
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -213,7 +213,7 @@ function Copilot() {
       }).then((x) => x.json());
       setMsgs([...history, { role: "assistant", content: r.reply || r.error || "(no reply)", tools: (r.tools_used || []).map((t: any) => t.tool) }]);
     } catch (e: any) { setMsgs([...history, { role: "assistant", content: "Request failed: " + e.message }]); }
-    finally { setBusy(false); }
+    finally { setBusy(false); onChange(); }
   }
   return (
     <section style={{ marginTop: 24, border: "1px solid var(--line)", borderRadius: 14, background: "var(--paper)", overflow: "hidden" }}>
