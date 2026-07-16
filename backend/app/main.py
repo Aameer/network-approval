@@ -44,3 +44,10 @@ app.include_router(vault.router)
 app.include_router(jobs.router)
 app.include_router(inbox.router)
 app.include_router(networks.router)
+
+# SQLAdmin data browser at /admin (framework-provided, password-gated, read-only).
+try:
+    from .admin_panel import setup_admin
+    setup_admin(app)
+except Exception as _e:  # noqa: BLE001 - don't let a missing dep crash the API
+    print("admin panel disabled:", _e)

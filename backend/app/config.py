@@ -36,3 +36,4 @@ GCMS_PASSWORD = os.getenv("GCMS_PASSWORD", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 COPILOT_MODEL = os.getenv("COPILOT_MODEL", "claude-sonnet-5")
 SECRETS_KEY = os.getenv("SECRETS_KEY", "")  # Fernet key; production -> KMS/secrets manager
+ADMIN_PANEL_PASSWORD = os.getenv("ADMIN_PANEL_PASSWORD", "")  # SQLAdmin login; empty => panel off
