@@ -10,6 +10,7 @@ type Site = {
 };
 type Flow = { id: number; site: string; network: string; state: string; created_by: string; plan: any };
 type Audit = { actor: string; actor_kind: string; action: string; target: string | null; created_at: string };
+type Registry = { name: string; phase: number; signup_url: string | null; status: string };
 
 const STATUS_COLOR: Record<string, string> = {
   approved: "var(--human)", applied: "var(--c3)", awaiting: "var(--svc)",
@@ -40,17 +41,19 @@ export default function Dashboard() {
   const [sites, setSites] = useState<Site[]>([]);
   const [flows, setFlows] = useState<Flow[]>([]);
   const [audit, setAudit] = useState<Audit[]>([]);
+  const [networks, setNetworks] = useState<Registry[]>([]);
   const [loading, setLoading] = useState(true);
 
   async function load() {
     const me = await fetch("/api/auth/me", { credentials: "include" }).then((r) => r.json());
     setUser(me.authenticated ? me.user : null);
-    const [p, w, a] = await Promise.all([
+    const [p, w, a, nw] = await Promise.all([
       fetch("/api/portfolio", { credentials: "include" }).then((r) => r.json()),
       fetch("/api/workflows?state=awaiting_approval", { credentials: "include" }).then((r) => r.json()),
       fetch("/api/audit?limit=8", { credentials: "include" }).then((r) => r.json()),
+      fetch("/api/networks", { credentials: "include" }).then((r) => r.json()),
     ]);
-    setSites(p.sites || []); setFlows(w.runs || []); setAudit(a.entries || []);
+    setSites(p.sites || []); setFlows(w.runs || []); setAudit(a.entries || []); setNetworks(nw.networks || []);
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
@@ -84,8 +87,36 @@ export default function Dashboard() {
         </>
       )}
 
+      <NetworksSection networks={networks} />
       <AuditPanel audit={audit} />
     </main>
+  );
+}
+
+function NetworksSection({ networks }: { networks: Registry[] }) {
+  const [open, setOpen] = useState(false);
+  const color = (s: string) => (s === "verified" ? "var(--human)" : s === "pending" ? "var(--c3)" : "var(--ext)");
+  const verified = networks.filter((n) => n.status === "verified").length;
+  return (
+    <section style={{ marginTop: 28 }}>
+      <div onClick={() => setOpen(!open)} style={{ cursor: "pointer", display: "flex", alignItems: "baseline", gap: 10 }}>
+        <span className="mono" style={{ fontSize: 12, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--c3)", fontWeight: 700 }}>Networks · {networks.length}</span>
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>registry — {verified} verified · signup URLs discovered once, reused</span>
+        <span style={{ marginLeft: "auto", color: "var(--muted)" }}>{open ? "–" : "+"}</span>
+      </div>
+      {open && (
+        <div style={{ marginTop: 12, border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
+          {networks.map((n, i) => (
+            <div key={n.name} style={{ display: "flex", gap: 12, alignItems: "center", padding: "9px 14px", borderBottom: i < networks.length - 1 ? "1px solid var(--line)" : "none", fontSize: 13 }}>
+              <span className="mono" style={{ minWidth: 26, color: "var(--muted)" }}>P{n.phase}</span>
+              <span className="mono" style={{ minWidth: 128, fontWeight: 600 }}>{n.name}</span>
+              <span className="mono" style={{ fontSize: 10.5, color: color(n.status), border: `1px solid ${color(n.status)}`, borderRadius: 12, padding: "1px 8px", minWidth: 74, textAlign: "center" }}>{n.status}</span>
+              <span style={{ color: "var(--muted)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.signup_url || "— (discovery target)"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
