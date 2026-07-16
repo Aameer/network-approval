@@ -99,6 +99,17 @@ class SiteSecret(SQLModel, table=True):
     value_enc: str
 
 
+class NetworkCredential(SQLModel, table=True):
+    """A network account login (per holding-company x network), password encrypted.
+    Leased by the apply agent at submit time — never plaintext in code/DB/prompts."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    holding_company: str = Field(index=True)
+    network: str = Field(index=True)
+    username: str
+    password_enc: str
+    notes: Optional[str] = None
+
+
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(index=True, unique=True)

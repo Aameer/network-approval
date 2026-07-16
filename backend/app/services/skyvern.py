@@ -53,7 +53,7 @@ def build_task(domain: str, network: str, plan: dict, creds_ref=None) -> dict:
     }
 
 
-def submit_application(domain: str, network: str, plan: dict, creds_ref=None) -> dict:
+def submit_application(domain: str, network: str, plan: dict, holding_company=None, creds_ref=None) -> dict:
     task = build_task(domain, network, plan, creds_ref)
 
     if not SKYVERN_LIVE:
@@ -69,6 +69,17 @@ def submit_application(domain: str, network: str, plan: dict, creds_ref=None) ->
         return {"mode": "BLOCKED", "error": "Skyvern not configured (SKYVERN_API_KEY / SKYVERN_BASE_URL)"}
     if not task["url"]:
         return {"mode": "BLOCKED", "error": f"no signup URL configured for '{network}' in NETWORK_SIGNUP_URLS"}
+
+    # Lease the network login just-in-time — never stored in the plan/DB, only sent to
+    # Skyvern over TLS at submit time.
+    from . import vault
+    if holding_company:
+        leased = vault.lease_network_credential(holding_company, network)
+        if "error" in leased:
+            return {"mode": "BLOCKED",
+                    "error": leased["error"] + " — store it via POST /api/network-credentials first"}
+        task["navigation_payload"]["credentials"] = {
+            "username": leased["username"], "password": leased["password"]}
 
     # --- LIVE path: create the remote-browser run (async; a worker polls to completion) ---
     try:

@@ -14,6 +14,7 @@ from sqlmodel import Session, select
 
 from ..db import engine
 from ..models import ApplicationStatus, AuditLog, NetworkApplication, Site, WorkflowRun
+from . import vault
 
 # Playbook Phase-0/1 application pack — what a real apply would attach.
 _DOCS = [
@@ -40,7 +41,10 @@ def build_dry_run(domain: str, network: str) -> dict:
                 "disclosure": "read & accept (site has live Affiliate Disclosure)",
             },
             "captcha": "auto-solve via CAPSOLVER; else queue to human",
-            "credentials": "leased from vault at run time — never in this plan",
+            "credentials_available": vault.has_network_credential(site.holding_company or "", network),
+            "credentials_ref": (f"netcred:{site.holding_company}:{network}"
+                                if vault.has_network_credential(site.holding_company or "", network) else None),
+            "credentials": "leased at submit time from the encrypted store — never in this plan",
         }
 
 
@@ -82,7 +86,8 @@ def _execute_apply(run: WorkflowRun) -> dict:
     # Real apply via Skyvern remote browser (dry-runnable until SKYVERN_LIVE=true).
     from . import skyvern
     plan = json.loads(run.dry_run_plan) if run.dry_run_plan else {}
-    return skyvern.submit_application(run.site_domain, run.network_name, plan)
+    return skyvern.submit_application(run.site_domain, run.network_name, plan,
+                                      holding_company=plan.get("holding_company"))
 
 
 def approve_run(run_id: int, approver: str) -> dict:

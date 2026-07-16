@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 
 from ..config import SECRETS_KEY
 from ..db import engine
-from ..models import AuditLog, Site, SiteSecret
+from ..models import AuditLog, NetworkCredential, Site, SiteSecret
 
 # Columns from the inventory sheet that are secrets, not open registry fields.
 SECRET_FIELDS = ["mcc_admin_password", "payment_profile_card", "payment_profile_link"]
@@ -80,3 +80,52 @@ def sites_with_secrets() -> set[int]:
         return set()
     with Session(engine) as s:
         return set(s.exec(select(SiteSecret.site_id)).all())
+
+
+# --- network account credentials (leased by the apply agent at runtime) ---
+
+def _find_netcred(s, holding_company: str, network: str):
+    hc, net = (holding_company or "").lower(), (network or "").lower()
+    for c in s.exec(select(NetworkCredential)).all():
+        if c.holding_company.lower() == hc and c.network.lower() == net:
+            return c
+    return None
+
+
+def has_network_credential(holding_company: str, network: str) -> bool:
+    if not enabled():
+        return False
+    with Session(engine) as s:
+        return _find_netcred(s, holding_company, network) is not None
+
+
+def store_network_credential(holding_company: str, network: str, username: str,
+                             password: str, actor: str = "admin") -> dict:
+    if not enabled():
+        return {"error": "secrets store not configured (SECRETS_KEY unset)"}
+    with Session(engine) as s:
+        c = _find_netcred(s, holding_company, network)
+        if c:
+            c.username, c.password_enc = username, encrypt(password)
+        else:
+            c = NetworkCredential(holding_company=holding_company, network=network,
+                                  username=username, password_enc=encrypt(password))
+        s.add(c)
+        s.add(AuditLog(actor=actor, actor_kind="human", action="credential.stored",
+                       target=f"{holding_company}:{network}", detail="{}"))
+        s.commit()
+        return {"credentials_ref": f"netcred:{holding_company}:{network}", "stored": True}
+
+
+def lease_network_credential(holding_company: str, network: str, actor: str = "apply-agent") -> dict:
+    """Decrypt + return a network login for the apply agent. Audited on every lease."""
+    if not enabled():
+        return {"error": "secrets store not configured"}
+    with Session(engine) as s:
+        c = _find_netcred(s, holding_company, network)
+        if not c:
+            return {"error": f"no stored credential for {holding_company}:{network}"}
+        s.add(AuditLog(actor=actor, actor_kind="agent", action="credential.leased",
+                       target=f"{holding_company}:{network}", detail="{}"))
+        s.commit()
+        return {"username": c.username, "password": decrypt(c.password_enc)}
