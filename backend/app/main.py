@@ -8,7 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_ORIGIN, SESSION_SECRET
 from .db import init_db
-from .routers import audit, auth, copilot, inbox, jobs, portfolio, registry, vault, workflows
+from .routers import audit, auth, copilot, inbox, jobs, networks, portfolio, registry, vault, workflows
 
 app = FastAPI(title="C3 — Central Command & Control (PoC)")
 
@@ -43,3 +43,4 @@ app.include_router(registry.router)
 app.include_router(vault.router)
 app.include_router(jobs.router)
 app.include_router(inbox.router)
+app.include_router(networks.router)

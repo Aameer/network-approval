@@ -110,6 +110,17 @@ class NetworkCredential(SQLModel, table=True):
     notes: Optional[str] = None
 
 
+class Network(SQLModel, table=True):
+    """Affiliate-network registry — signup/login URLs discovered once, reused everywhere."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True)
+    phase: int = 1
+    signup_url: Optional[str] = None
+    login_url: Optional[str] = None
+    status: str = "unverified"   # unverified / pending / verified
+    notes: Optional[str] = None
+
+
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(index=True, unique=True)

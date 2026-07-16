@@ -14,7 +14,7 @@ from ..config import SKYVERN_API_KEY, SKYVERN_BASE_URL, SKYVERN_LIVE
 
 # Per-network publisher signup / application URLs — fill as you onboard each network.
 NETWORK_SIGNUP_URLS = {
-    "sourceknowledge": "",   # e.g. https://publishers.sourceknowledge.com/signup
+    "sourceknowledge": "https://app.sourceknowledge.com/user/signup/affiliate",
     "brandreward": "",
     "admitad": "",
 }
@@ -24,19 +24,33 @@ def configured() -> bool:
     return bool(SKYVERN_API_KEY and SKYVERN_BASE_URL)
 
 
+def signup_url_for(network: str) -> str:
+    """Resolve the signup URL from the Network registry, falling back to the seed dict."""
+    try:
+        from sqlmodel import Session, select
+        from ..db import engine
+        from ..models import Network
+        with Session(engine) as s:
+            for n in s.exec(select(Network)).all():
+                if n.name.lower() == (network or "").lower() and n.signup_url:
+                    return n.signup_url
+    except Exception:
+        pass
+    return NETWORK_SIGNUP_URLS.get((network or "").lower(), "")
+
+
 def build_task(domain: str, network: str, plan: dict, creds_ref=None) -> dict:
     """The exact Skyvern task payload — built without sending it."""
-    url = NETWORK_SIGNUP_URLS.get((network or "").lower(), "")
+    url = signup_url_for(network)
     fa = plan.get("form_answers", {}) if isinstance(plan, dict) else {}
     return {
         "url": url,
         "navigation_goal": (
-            f"Apply the website {domain} as a publisher to the {network} affiliate network. "
-            "Log in with the provided credentials, or register a new publisher account using the "
-            "holding-company email. Complete the publisher application form, upload the required "
-            "documents, answer the questionnaire, accept the affiliate disclosure / T&Cs, and submit. "
-            "If a CAPTCHA appears, solve it. If email verification is required, use the verification "
-            "link. Capture a screenshot of the final confirmation page."
+            f"Register a publisher account for the website {domain} on the {network} network using "
+            "the provided email and password. Accept the terms if asked. If a CAPTCHA appears, solve "
+            "it. If an email verification link/code is required, complete it. Then log in with the "
+            "same credentials and confirm the account is active. Capture a screenshot of the "
+            "logged-in account dashboard."
         ),
         "navigation_payload": {
             "website": f"https://{domain}",

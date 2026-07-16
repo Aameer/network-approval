@@ -9,8 +9,39 @@ import os
 from sqlmodel import Session, select
 
 from .db import engine, init_db
-from .models import ApplicationStatus, AuditLog, NetworkApplication, Site, SiteSecret
+from .models import ApplicationStatus, AuditLog, Network, NetworkApplication, Site, SiteSecret
 from .services import vault
+
+# The playbook's network list — signup/login URLs discovered once, reused everywhere.
+KNOWN_NETWORKS = [
+    ("YieldKit", 1, None, None, "unverified"),
+    ("SourceKnowledge", 1, "https://app.sourceknowledge.com/user/signup/affiliate", "https://app.sourceknowledge.com/login", "verified"),
+    ("ChineseAn", 1, None, None, "unverified"),
+    ("BrandReward", 1, None, None, "unverified"),
+    ("Admitad", 2, None, None, "unverified"),
+    ("Partnerize", 2, None, None, "unverified"),
+    ("InvolveAsia", 2, None, None, "unverified"),
+    ("TradeDoubler", 2, None, None, "unverified"),
+    ("Mrge", 2, None, None, "unverified"),
+    ("PepperJam", 2, None, None, "unverified"),
+    ("CJ", 3, "https://signup.cj.com/member/signup/publisher/", None, "verified"),
+    ("Awin", 3, None, None, "unverified"),
+    ("Impact", 3, None, None, "unverified"),
+    ("Rakuten", 3, None, None, "unverified"),
+    ("Skimlinks", 3, None, None, "unverified"),
+    ("FlexOffers", 3, None, None, "unverified"),
+]
+
+
+def seed_networks():
+    """Idempotent — seeds the network registry once (independent of site seeding)."""
+    with Session(engine) as s:
+        if s.exec(select(Network)).first():
+            return
+        for name, phase, su, lu, st in KNOWN_NETWORKS:
+            s.add(Network(name=name, phase=phase, signup_url=su, login_url=lu, status=st))
+        s.commit()
+        print(f"seeded {len(KNOWN_NETWORKS)} networks ({sum(1 for n in KNOWN_NETWORKS if n[4]=='verified')} with verified URLs)")
 
 _DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 # Prefer the real (git-ignored) inventory; fall back to the committed sanitized sample.
@@ -50,9 +81,10 @@ def _clean(v):
 
 def run():
     init_db()
+    seed_networks()
     with Session(engine) as s:
         if s.exec(select(Site)).first():
-            print("registry already seeded — skipping")
+            print("registry already seeded — skipping (networks ensured)")
             return
 
         count = 0
