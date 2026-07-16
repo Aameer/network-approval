@@ -11,7 +11,9 @@ from email.header import decode_header, make_header
 
 from ..config import PARSER_EMAIL, PARSER_IMAP_HOST, PARSER_PASSWORD
 
-_PUB_RE = re.compile(r"(?:publisher|pub|affiliate)\s*(?:id|#)?\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\-]{3,})", re.I)
+# Require an explicit id/#/number token; the captured value must contain a digit
+# (so "publisher application" won't be mistaken for an ID).
+_PUB_RE = re.compile(r"(?:publisher|pub|affiliate)[\s\-]*(?:id|no\.?|number|#)\s*[:#\-]?\s*([A-Za-z0-9][A-Za-z0-9\-]{2,})", re.I)
 _APPROVE_KW = ("approved", "approval", "welcome", "accepted", "publisher", "activated")
 
 
@@ -60,7 +62,7 @@ def scan_inbox(limit: int = 15) -> dict:
             approval = any(k in blob.lower() for k in _APPROVE_KW)
             pub = None
             m = _PUB_RE.search(blob)
-            if m:
+            if m and re.search(r"\d", m.group(1)):  # a real ID has at least one digit
                 pub = m.group(1)
             results.append({"from": frm, "subject": subj,
                             "looks_like_approval": approval, "publisher_id": pub})
