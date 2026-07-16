@@ -24,6 +24,12 @@ PARSER_IMAP_HOST = os.getenv("PARSER_IMAP_HOST", "imap.gmail.com")
 PARSER_EMAIL = os.getenv("PARSER_EMAIL", "")
 PARSER_PASSWORD = os.getenv("PARSER_PASSWORD", "")
 
+# Real apply agent (Skyvern remote browser) — reuse coupon-engine's Skyvern.
+# SKYVERN_LIVE stays false until account + signup URL + sign-off are in place.
+SKYVERN_API_KEY = os.getenv("SKYVERN_API_KEY", "")
+SKYVERN_BASE_URL = os.getenv("SKYVERN_BASE_URL", "https://api.skyvern.com")
+SKYVERN_LIVE = os.getenv("SKYVERN_LIVE", "false").lower() == "true"
+
 GCMS_GRAPHQL_ENDPOINT = os.getenv("GCMS_GRAPHQL_ENDPOINT", "")
 GCMS_USERNAME = os.getenv("GCMS_USERNAME", "")
 GCMS_PASSWORD = os.getenv("GCMS_PASSWORD", "")

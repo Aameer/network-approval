@@ -79,13 +79,10 @@ def create_apply_run(domain: str, network: str, created_by: str = "copilot") -> 
 
 
 def _execute_apply(run: WorkflowRun) -> dict:
-    # STUB. Replace with the Skyvern/browser agent for the real submission.
-    return {
-        "submitted": True,
-        "mode": "STUB — no real network call yet",
-        "screenshots": ["confirmation_stub.png"],
-        "swap": "replace apply._execute_apply with the Skyvern agent when creds land",
-    }
+    # Real apply via Skyvern remote browser (dry-runnable until SKYVERN_LIVE=true).
+    from . import skyvern
+    plan = json.loads(run.dry_run_plan) if run.dry_run_plan else {}
+    return skyvern.submit_application(run.site_domain, run.network_name, plan)
 
 
 def approve_run(run_id: int, approver: str) -> dict:
