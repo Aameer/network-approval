@@ -1,12 +1,16 @@
-"""SQLAdmin data browser — read-only, password-gated, encrypted columns never shown.
+"""starlette-admin data browser — read-only, password-gated, encrypted columns hidden.
 
-Mounted at /admin on the FastAPI app. A real admin framework (auth backend, list/detail/
-search/pagination) instead of a hand-rolled view. Everything read-only for safety.
+Mounted at /admin. Richer than sqladmin (better UI, field types, custom actions available
+later). Everything read-only for now; sensitive columns (password_enc/value_enc) are simply
+not listed as fields, so they never surface.
 """
 from __future__ import annotations
 
-from sqladmin import Admin, ModelView
-from sqladmin.authentication import AuthenticationBackend
+from starlette.middleware import Middleware
+from starlette.middleware.sessions import SessionMiddleware
+from starlette_admin.auth import AdminUser, AuthProvider
+from starlette_admin.contrib.sqla import Admin, ModelView
+from starlette_admin.exceptions import LoginFailed
 
 from .config import ADMIN_PANEL_PASSWORD, SESSION_SECRET
 from .db import engine
@@ -16,78 +20,107 @@ from .models import (
 )
 
 
-class AdminAuth(AuthenticationBackend):
-    async def login(self, request):
-        form = await request.form()
-        if ADMIN_PANEL_PASSWORD and form.get("password") == ADMIN_PANEL_PASSWORD:
-            request.session["admin_panel"] = True
-            return True
-        return False
-
-    async def logout(self, request):
-        request.session.pop("admin_panel", None)
-        return True
-
-    async def authenticate(self, request):
-        return bool(request.session.get("admin_panel"))
+def _audit_override(obj):
+    """Log an admin-panel override to the AuditLog (raw edits must still be audited)."""
+    from sqlmodel import Session
+    from .db import engine as _e
+    from .models import AuditLog as _A
+    with Session(_e) as s:
+        s.add(_A(actor="admin-panel", actor_kind="human", action="admin.override",
+                 target=f"{type(obj).__name__}:{getattr(obj, 'id', '?')}", detail="{}"))
+        s.commit()
 
 
 class _RO:
-    can_create = False
-    can_edit = False
-    can_delete = False
-    can_export = False
+    """Read-only view."""
+    def can_create(self, request) -> bool:
+        return False
+
+    def can_edit(self, request) -> bool:
+        return False
+
+    def can_delete(self, request) -> bool:
+        return False
 
 
-class SiteAdmin(_RO, ModelView, model=Site):
-    column_list = [Site.id, Site.domain, Site.holding_company, Site.phase,
-                   Site.website_status, Site.country, Site.redirection_status, Site.is_sandbox]
-    column_searchable_list = [Site.domain, Site.holding_company]
+class _Override:
+    """Editable (override) + audited; no create/delete."""
+    def can_create(self, request) -> bool:
+        return False
+
+    def can_delete(self, request) -> bool:
+        return False
+
+    async def after_edit(self, request, obj) -> None:
+        _audit_override(obj)
 
 
-class NetworkAdmin(_RO, ModelView, model=Network):
-    column_list = [Network.id, Network.name, Network.phase, Network.status,
-                   Network.signup_url, Network.login_url]
+class SiteView(_Override, ModelView):
+    fields = ["id", "domain", "holding_company", "phase", "website_status",
+              "country", "redirection_status", "is_sandbox", "notes"]
+    searchable_fields = ["domain", "holding_company"]
 
 
-class NetworkApplicationAdmin(_RO, ModelView, model=NetworkApplication):
-    column_list = [NetworkApplication.id, NetworkApplication.site_id, NetworkApplication.network_name,
-                   NetworkApplication.status, NetworkApplication.publisher_id,
-                   NetworkApplication.submission_date, NetworkApplication.next_followup_date]
+class NetworkView(_Override, ModelView):
+    fields = ["id", "name", "phase", "status", "signup_url", "login_url"]
 
 
-class WorkflowAdmin(_RO, ModelView, model=WorkflowRun):
-    column_list = [WorkflowRun.id, WorkflowRun.site_domain, WorkflowRun.network_name,
-                   WorkflowRun.kind, WorkflowRun.state, WorkflowRun.created_by, WorkflowRun.created_at]
+class NetworkApplicationView(_Override, ModelView):
+    fields = ["id", "site_id", "network_name", "status", "publisher_id",
+              "submission_date", "next_followup_date", "rejection_reason"]
 
 
-class AuditAdmin(_RO, ModelView, model=AuditLog):
-    column_list = [AuditLog.id, AuditLog.actor_kind, AuditLog.actor, AuditLog.action,
-                   AuditLog.target, AuditLog.created_at]
+class WorkflowView(_RO, ModelView):
+    fields = ["id", "site_domain", "network_name", "kind", "state", "created_by", "created_at"]
 
 
-class NetworkCredentialAdmin(_RO, ModelView, model=NetworkCredential):
-    # password_enc excluded from list AND detail — the ciphertext never surfaces here.
-    column_list = [NetworkCredential.id, NetworkCredential.holding_company,
-                   NetworkCredential.network, NetworkCredential.username]
-    column_details_list = column_list
+class AuditView(_RO, ModelView):
+    fields = ["id", "actor_kind", "actor", "action", "target", "created_at"]
 
 
-class SiteSecretAdmin(_RO, ModelView, model=SiteSecret):
-    # value_enc excluded.
-    column_list = [SiteSecret.id, SiteSecret.site_id, SiteSecret.field]
-    column_details_list = column_list
+class NetworkCredentialView(_RO, ModelView):
+    fields = ["id", "holding_company", "network", "username"]  # password_enc omitted
 
 
-class UserAdmin(_RO, ModelView, model=User):
-    column_list = [User.id, User.email, User.name, User.role, User.created_at]
+class SiteSecretView(_RO, ModelView):
+    fields = ["id", "site_id", "field"]  # value_enc omitted
+
+
+class UserView(_RO, ModelView):
+    fields = ["id", "email", "name", "role", "created_at"]
+
+
+class AdminAuth(AuthProvider):
+    async def login(self, username, password, remember_me, request, response):
+        if ADMIN_PANEL_PASSWORD and password == ADMIN_PANEL_PASSWORD:
+            request.session.update({"admin": True})
+            return response
+        raise LoginFailed("Invalid credentials")
+
+    async def is_authenticated(self, request) -> bool:
+        return bool(request.session.get("admin"))
+
+    def get_admin_user(self, request):
+        return AdminUser(username="admin")
+
+    async def logout(self, request, response):
+        request.session.clear()
+        return response
 
 
 def setup_admin(app):
     if not ADMIN_PANEL_PASSWORD:
-        return  # panel stays off until a password is configured
-    admin = Admin(app, engine, authentication_backend=AdminAuth(secret_key=SESSION_SECRET),
-                  title="C3 Admin")
-    for view in (SiteAdmin, NetworkAdmin, NetworkApplicationAdmin, WorkflowAdmin,
-                 AuditAdmin, NetworkCredentialAdmin, SiteSecretAdmin, UserAdmin):
-        admin.add_view(view)
+        return
+    admin = Admin(
+        engine, title="C3 Admin", auth_provider=AdminAuth(),
+        middlewares=[Middleware(SessionMiddleware, secret_key=SESSION_SECRET)],
+    )
+    admin.add_view(SiteView(Site))
+    admin.add_view(NetworkView(Network))
+    admin.add_view(NetworkApplicationView(NetworkApplication))
+    admin.add_view(WorkflowView(WorkflowRun))
+    admin.add_view(AuditView(AuditLog))
+    admin.add_view(NetworkCredentialView(NetworkCredential))
+    admin.add_view(SiteSecretView(SiteSecret))
+    admin.add_view(UserView(User))
+    admin.mount_to(app)
