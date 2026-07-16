@@ -35,6 +35,29 @@ def decrypt(token: str) -> str:
     return _f.decrypt(token.encode()).decode()
 
 
+def store_site_secret(domain: str, field: str, value: str, actor: str = "admin") -> dict:
+    """Override (set) a site secret value — encrypted, audited. Value is never returned."""
+    if not enabled():
+        return {"error": "secrets store not configured"}
+    if field not in SECRET_FIELDS:
+        return {"error": f"'{field}' is not a secret field"}
+    with Session(engine) as s:
+        site = s.exec(select(Site).where(Site.domain == domain)).first()
+        if not site:
+            return {"error": f"unknown site {domain}"}
+        row = s.exec(select(SiteSecret).where(
+            SiteSecret.site_id == site.id, SiteSecret.field == field)).first()
+        if row:
+            row.value_enc = encrypt(value)
+        else:
+            row = SiteSecret(site_id=site.id, field=field, value_enc=encrypt(value))
+        s.add(row)
+        s.add(AuditLog(actor=actor, actor_kind="human", action="secret.override",
+                       target=f"{domain}:{field}", detail="{}"))
+        s.commit()
+        return {"domain": domain, "field": field, "stored": True}
+
+
 def get_site_secrets(domain: str, actor: str = "admin") -> dict:
     """Decrypt + return a site's secrets. Caller MUST already be authorized (admin)."""
     if not enabled():

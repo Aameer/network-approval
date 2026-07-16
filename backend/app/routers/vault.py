@@ -32,6 +32,22 @@ def secrets_search(field: str, contains: str, request: Request):
     return vault.find_sites_by_secret(field, contains, actor)
 
 
+class SiteSecretIn(BaseModel):
+    domain: str
+    field: str
+    value: str
+
+
+@router.post("/site-secrets")
+def store_site_secret(body: SiteSecretIn, request: Request):
+    """Override a site secret value (admin only, audited). Value never returned."""
+    actor = _admin(request)
+    r = vault.store_site_secret(body.domain, body.field, body.value, actor)
+    if "error" in r:
+        raise HTTPException(status_code=400, detail=r["error"])
+    return r
+
+
 class NetCred(BaseModel):
     holding_company: str
     network: str

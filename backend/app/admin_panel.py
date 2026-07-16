@@ -56,9 +56,21 @@ class _Override:
 
 
 class SiteView(_Override, ModelView):
-    fields = ["id", "domain", "holding_company", "phase", "website_status",
-              "country", "redirection_status", "is_sandbox", "notes"]
-    searchable_fields = ["domain", "holding_company"]
+    fields = ["id", "domain", "holding_company", "site_category", "website_type",
+              "website_status", "country", "phase", "is_sandbox", "redirection_status",
+              "clickout_moved", "ga4_property_id", "wct_user_website_id", "gtm_tag",
+              "mcc_id", "mcc_admin_email", "persona", "registered_on", "domain_expiry",
+              "privacy_protection", "repo", "repo_link", "repo_criticality", "repo_status",
+              "vercel_project", "notes", "raw"]
+    exclude_fields_from_list = ["raw"]  # full original row — shown in the detail view only
+    searchable_fields = ["domain", "holding_company", "mcc_admin_email"]
+    column_sortable_list = ["domain", "holding_company", "phase", "country"]
+
+    async def __admin_repr__(self, request, obj):
+        return f"{obj.domain} · {obj.holding_company or '—'}"
+
+    async def __admin_select2_repr__(self, request, obj):
+        return f"<span>{obj.domain} · {obj.holding_company or '—'}</span>"
 
 
 class NetworkView(_Override, ModelView):
@@ -66,8 +78,9 @@ class NetworkView(_Override, ModelView):
 
 
 class NetworkApplicationView(_Override, ModelView):
-    fields = ["id", "site_id", "network_name", "status", "publisher_id",
+    fields = ["id", "site", "network_name", "status", "publisher_id",
               "submission_date", "next_followup_date", "rejection_reason"]
+    label = "Network Applications"
 
 
 class WorkflowView(_RO, ModelView):
@@ -83,7 +96,8 @@ class NetworkCredentialView(_RO, ModelView):
 
 
 class SiteSecretView(_RO, ModelView):
-    fields = ["id", "site_id", "field"]  # value_enc omitted
+    fields = ["id", "site", "field"]  # value_enc omitted; site shows domain + holding co
+    label = "Site Secrets"
 
 
 class UserView(_RO, ModelView):

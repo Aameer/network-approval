@@ -7,7 +7,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Optional
 
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
 
 
 class ApplicationStatus(str, Enum):
@@ -50,6 +50,9 @@ class Site(SQLModel, table=True):
     is_sandbox: bool = False
     notes: Optional[str] = None
 
+    def __str__(self) -> str:               # how a Site renders in admin relationships
+        return f"{self.domain} · {self.holding_company or '—'}"
+
 
 class NetworkApplication(SQLModel, table=True):
     """One (site x affiliate-network) application lifecycle — C3 owns this."""
@@ -64,6 +67,7 @@ class NetworkApplication(SQLModel, table=True):
     next_followup_date: Optional[date] = None
     rejection_reason: Optional[str] = None
     notes: Optional[str] = None
+    site: Optional["Site"] = Relationship()   # for admin display (site domain + holding co)
 
 
 class WorkflowRun(SQLModel, table=True):
@@ -97,6 +101,7 @@ class SiteSecret(SQLModel, table=True):
     site_id: int = Field(foreign_key="site.id", index=True)
     field: str
     value_enc: str
+    site: Optional["Site"] = Relationship()   # for admin display (which site)
 
 
 class NetworkCredential(SQLModel, table=True):
