@@ -53,6 +53,12 @@ class Site(SQLModel, table=True):
     def __str__(self) -> str:               # how a Site renders in admin relationships
         return f"{self.domain} · {self.holding_company or '—'}"
 
+    def __admin_repr__(self, request) -> str:   # starlette-admin: label for the related-site chip
+        return f"{self.domain} · {self.holding_company or '—'}"
+
+    def __admin_select2_repr__(self, request) -> str:
+        return f'<span>{self.domain} · {self.holding_company or "—"}</span>'
+
 
 class NetworkApplication(SQLModel, table=True):
     """One (site x affiliate-network) application lifecycle — C3 owns this."""

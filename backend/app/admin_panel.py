@@ -66,12 +66,6 @@ class SiteView(_Override, ModelView):
     searchable_fields = ["domain", "holding_company", "mcc_admin_email"]
     column_sortable_list = ["domain", "holding_company", "phase", "country"]
 
-    async def __admin_repr__(self, request, obj):
-        return f"{obj.domain} · {obj.holding_company or '—'}"
-
-    async def __admin_select2_repr__(self, request, obj):
-        return f"<span>{obj.domain} · {obj.holding_company or '—'}</span>"
-
 
 class NetworkView(_Override, ModelView):
     fields = ["id", "name", "phase", "status", "signup_url", "login_url"]
