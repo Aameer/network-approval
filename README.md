@@ -54,3 +54,15 @@ npm run dev          # http://localhost:3000  (proxies /api → :8000)
 - [ ] Read/write RBAC (row + column scopes) — production step
 
 See the build plan artifact for the full milestone map.
+
+## TODO / follow-ups
+- [ ] **Validate the inbox parser on a REAL network approval email.** It's currently
+  proven only on a hand-crafted test email (fabricated Publisher ID `SK-482913`).
+  A genuine SourceKnowledge/Admitad approval may format the sender, subject, and
+  Publisher ID differently — re-test + tune the extractor once a real one lands
+  (which happens after the real apply goes out).
+- [ ] Sender validation: allowlist trusted network domains + DKIM/SPF check; never
+  auto-flip status on an email alone (human-confirm the flip).
+- [ ] Real apply agent (Skyvern) — swap `apply._execute_apply` once the SourceKnowledge
+  account + Murtaza sign-off are in hand.
+- [ ] Google OIDC login (redirect URI in the 8thloop GCP project) — dev-login stub for now.
