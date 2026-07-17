@@ -134,17 +134,20 @@ function Approvals({ flows, onChange }: { flows: Flow[]; onChange: () => void })
           <div key={f.id} style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 10, padding: "12px 14px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <span className="mono" style={{ fontWeight: 600, fontSize: 13.5 }}>{f.site} → {f.network}</span>
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>proposed by {f.created_by} · {f.plan?.documents?.length || 0} docs</span>
+              <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                {f.plan?.operation || "apply"} · by {f.created_by}
+                {f.plan?.ready_to_execute === false ? " · ⚠ needs data" : ""}
+              </span>
               <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
                 <button onClick={() => approve(f.id)} style={{ ...btn }}>Approve</button>
                 <button onClick={() => reject(f.id)} style={{ ...btnGhost }}>Reject</button>
               </div>
             </div>
-            {f.plan && (
+            {f.plan?.missing_required?.length ? (
               <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>
-                email: {f.plan.email} · captcha: {f.plan.captcha}
+                blocking: {f.plan.missing_required.join(", ")}
               </div>
-            )}
+            ) : null}
           </div>
         ))}
       </div>

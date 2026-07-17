@@ -15,7 +15,7 @@ from .services import vault
 # The playbook's network list — signup/login URLs discovered once, reused everywhere.
 KNOWN_NETWORKS = [
     ("YieldKit", 1, None, None, "unverified"),
-    ("SourceKnowledge", 1, "https://app.sourceknowledge.com/user/signup/affiliate", "https://app.sourceknowledge.com/login", "verified"),
+    ("SourceKnowledge", 1, "https://app.sourceknowledge.com/ui/signup/publisher", "https://app.sourceknowledge.com/login", "verified"),
     ("ChineseAn", 1, None, None, "unverified"),
     ("BrandReward", 1, None, None, "unverified"),
     ("Admitad", 2, None, None, "unverified"),

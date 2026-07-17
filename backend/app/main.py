@@ -8,7 +8,9 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_ORIGIN, SESSION_SECRET
 from .db import init_db
-from .routers import audit, auth, copilot, inbox, jobs, networks, portfolio, registry, vault, workflows
+from .routers import (
+    audit, auth, copilot, inbox, jobs, networks, portfolio, registry, review, vault, workflows,
+)
 
 app = FastAPI(title="C3 — Central Command & Control (PoC)")
 
@@ -44,6 +46,21 @@ app.include_router(vault.router)
 app.include_router(jobs.router)
 app.include_router(inbox.router)
 app.include_router(networks.router)
+app.include_router(review.router)
+
+
+# Land /admin on the Sites list by default (instead of the empty dashboard). Registered
+# before the admin mount so the exact-path routes win; sub-paths fall through to the mount.
+from fastapi.responses import RedirectResponse  # noqa: E402
+
+_ADMIN_HOME = "/admin/site/list?page=1&page_size=50&search=&order=id"
+
+
+@app.get("/admin", include_in_schema=False)
+@app.get("/admin/", include_in_schema=False)
+def _admin_home():
+    return RedirectResponse(_ADMIN_HOME)
+
 
 # SQLAdmin data browser at /admin (framework-provided, password-gated, read-only).
 try:

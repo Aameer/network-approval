@@ -122,6 +122,32 @@ def has_network_credential(holding_company: str, network: str) -> bool:
         return _find_netcred(s, holding_company, network) is not None
 
 
+def network_credential_username(holding_company: str, network: str) -> Optional[str]:
+    """The stored account email/username — NOT a secret (password stays encrypted),
+    so it's safe to surface in a plan without auditing. None if no credential."""
+    if not enabled():
+        return None
+    with Session(engine) as s:
+        c = _find_netcred(s, holding_company, network)
+        return c.username if c else None
+
+
+def network_credential_password_ok(holding_company: str, network: str, rule: str = "alnum") -> bool:
+    """Validity check WITHOUT exposing or auditing the value — True only if a credential
+    exists and its password satisfies `rule` (alnum = alphanumeric, some networks require it)."""
+    if not enabled():
+        return False
+    with Session(engine) as s:
+        c = _find_netcred(s, holding_company, network)
+        if not c:
+            return False
+        try:
+            pw = decrypt(c.password_enc)
+        except Exception:
+            return False
+        return pw.isalnum() if rule == "alnum" else bool(pw)
+
+
 def store_network_credential(holding_company: str, network: str, username: str,
                              password: str, actor: str = "admin") -> dict:
     if not enabled():

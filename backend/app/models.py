@@ -5,7 +5,7 @@ on site/product truth (read via GraphQL). See the build plan.
 """
 from datetime import date, datetime
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -77,16 +77,74 @@ class NetworkApplication(SQLModel, table=True):
 
 
 class WorkflowRun(SQLModel, table=True):
-    """A durable run of a gated action (apply, parse-inbox, ...)."""
+    """A durable run of a gated action (discover, apply, parse-inbox, ...)."""
     id: Optional[int] = Field(default=None, primary_key=True)
     site_domain: str
     network_name: Optional[str] = None
-    kind: str                                # apply / parse_inbox / milestone
+    kind: str                                # discover / apply / approval_flip / parse_inbox
+    operation: Optional[str] = None          # create / update — reconcile mode for apply runs
     state: str = "created"                   # created/dry_run/awaiting_approval/running/done/failed
-    dry_run_plan: Optional[str] = None       # JSON string
+    dry_run_plan: Optional[str] = None       # JSON: the inputs that WILL be entered (incl. Skyvern task)
+    result: Optional[str] = None             # JSON: the outcome (success/failure, run_id, error)
     created_by: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    answers: List["RunAnswer"] = Relationship(back_populates="run")
+
+    def __str__(self) -> str:
+        return f"#{self.id} {self.site_domain}·{self.network_name} ({self.operation or self.kind})"
+
+    def __admin_repr__(self, request) -> str:
+        return f"#{self.id} {self.site_domain} · {self.network_name} ({self.operation or self.kind})"
+
+    def __admin_select2_repr__(self, request) -> str:
+        return (f'<span>#{self.id} {self.site_domain} · {self.network_name} '
+                f'({self.operation or self.kind})</span>')
+
+    @property
+    def review_url(self) -> str:
+        """Deep link to the single-page review for this run (opens in the admin shell)."""
+        return f"/review/{self.id}"
+
+    @property
+    def skyvern_url(self) -> str:
+        """Link to the Skyvern run (live browser view, recording, step logs) when this run
+        executed/scouted via Skyvern. Empty for runs that never hit the browser."""
+        import json
+        try:
+            rid = json.loads(self.result or "{}").get("run_id")
+        except Exception:
+            rid = None
+        return f"https://app.skyvern.com/tasks/{rid}" if rid else ""
+
+
+class RunAnswer(SQLModel, table=True):
+    """One field of a prepared run's answer sheet — the human-readable, overridable unit.
+    `value` is what we'll set (editable = override); `current_value` is what's on the network
+    now (update mode). Password answers store only the masked placeholder, never the secret."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    run_id: int = Field(foreign_key="workflowrun.id", index=True)
+    page: int = 1
+    field_key: str
+    label: str
+    value: Optional[str] = None          # what we'll set — EDITABLE override
+    current_value: Optional[str] = None  # what's currently on the network (update mode)
+    status: str = "ready"                # ready / MISSING / INVALID / optional-empty
+    source: Optional[str] = None
+    required: bool = False
+    run: Optional["WorkflowRun"] = Relationship(back_populates="answers")
+
+    @property
+    def changed(self) -> str:
+        """Badge comparing what we'll submit vs what's live on the network:
+        '⚠ changed' (differs), '✓ same' (matches), '—' (we submit nothing for this field)."""
+        if self.field_key in ("password", "password_confirm"):
+            return "—"
+        a = str(self.value or "").strip()
+        if not a:
+            return "—"  # nothing to submit -> nothing changes
+        b = str(self.current_value or "").strip()
+        return "✓ same" if a == b else "⚠ changed"
 
 
 class AuditLog(SQLModel, table=True):
@@ -109,6 +167,22 @@ class SiteSecret(SQLModel, table=True):
     value_enc: str
     site: Optional["Site"] = Relationship()   # for admin display (which site)
 
+    @property
+    def value(self) -> str:
+        """Decrypted plaintext — surfaced ONLY in the password-gated admin detail view."""
+        from .services import vault
+        try:
+            return vault.decrypt(self.value_enc)
+        except Exception:
+            return "(unable to decrypt)"
+
+    @value.setter
+    def value(self, plaintext: str) -> None:
+        """Admin override — encrypt the new plaintext back into value_enc (never store plaintext)."""
+        from .services import vault
+        if plaintext is not None and not str(plaintext).startswith("(unable to decrypt"):
+            self.value_enc = vault.encrypt(str(plaintext))
+
 
 class NetworkCredential(SQLModel, table=True):
     """A network account login (per holding-company x network), password encrypted.
@@ -120,6 +194,22 @@ class NetworkCredential(SQLModel, table=True):
     password_enc: str
     notes: Optional[str] = None
 
+    @property
+    def password(self) -> str:
+        """Decrypted login password — surfaced ONLY in the password-gated admin detail view."""
+        from .services import vault
+        try:
+            return vault.decrypt(self.password_enc)
+        except Exception:
+            return "(unable to decrypt)"
+
+    @password.setter
+    def password(self, plaintext: str) -> None:
+        """Admin override — encrypt the new plaintext back into password_enc."""
+        from .services import vault
+        if plaintext is not None and not str(plaintext).startswith("(unable to decrypt"):
+            self.password_enc = vault.encrypt(str(plaintext))
+
 
 class Network(SQLModel, table=True):
     """Affiliate-network registry — signup/login URLs discovered once, reused everywhere."""
@@ -128,7 +218,32 @@ class Network(SQLModel, table=True):
     phase: int = 1
     signup_url: Optional[str] = None
     login_url: Optional[str] = None
+    profile_url: Optional[str] = None            # account profile/settings page (for update runs)
     status: str = "unverified"   # unverified / pending / verified
+    form_schema: Optional[str] = None            # JSON: fields the Discover run mapped (label/type/required/options)
+    form_schema_at: Optional[datetime] = None    # when the schema was last discovered
+    notes: Optional[str] = None
+
+
+class BillingProfile(SQLModel, table=True):
+    """The complete, real account profile for a holding company — everything a network
+    signup/settings form can ask for. Filled ONCE by ops, reused for every apply/update.
+    The Prepare run answers each discovered form field from here; nothing is ever invented."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    holding_company: str = Field(index=True, unique=True)
+    company_name: Optional[str] = None
+    contact_name: Optional[str] = None           # contact / billing person name
+    contact_email: Optional[str] = None
+    phone: Optional[str] = None
+    address1: Optional[str] = None
+    address2: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    country: Optional[str] = None
+    paypal_email: Optional[str] = None           # payout destination — MUST be real
+    tax_id: Optional[str] = None
+    extra: Optional[str] = None                  # JSON: any network-specific answers
     notes: Optional[str] = None
 
 

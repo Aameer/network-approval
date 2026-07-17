@@ -9,8 +9,7 @@ from sqlmodel import Session, select
 
 from ..db import engine
 from ..models import NetworkApplication, Site
-from . import gcms, parser, traffic, vault
-from .apply import create_apply_run
+from . import gcms, parser, pipeline, traffic, vault
 
 
 def read_portfolio(sandbox_only: bool = False, holding_company: str | None = None) -> dict:
@@ -50,8 +49,10 @@ def get_traffic(domain: str) -> dict:
 
 
 def apply_to_network(domain: str, network: str) -> dict:
-    """PROPOSE applying a site to a network. Creates a GATED dry-run for human approval — does NOT submit."""
-    return create_apply_run(domain, network, created_by="copilot")
+    """PROPOSE applying/updating a site on a network. Prepares a GATED answer sheet for human
+    approval — does NOT submit. Operation (create vs update) is inferred from application status."""
+    op = pipeline.infer_operation(domain, network)
+    return pipeline.prepare(domain, network, operation=op, created_by="copilot")
 
 
 def parse_inbox(limit: int = 15) -> dict:
