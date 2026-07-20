@@ -31,6 +31,13 @@ def list_workflows(state: Optional[str] = None):
     return apply.list_runs(state)
 
 
+@router.get("/reliability")
+def reliability():
+    """Head/tail scorecard: per network×engine success rate, speed, independent-verify %."""
+    from ..services import reliability as rel
+    return rel.report()
+
+
 @router.post("/apply")
 def propose_apply(req: ApplyRequest, request: Request):
     """Prepare the reconcile answer sheet (scout schema -> resolve from our DB -> gated run)."""
@@ -82,10 +89,18 @@ def get_answers(run_id: int):
                       .order_by(RunAnswer.page, RunAnswer.id)).all()
         import json as _json
         _res = _json.loads(run.result or "{}")
+        # Re-run is only allowed from the MOST RECENT successful (done) run for this site x network
+        # — never from a failed/unverified attempt (that would carry a bad state forward).
+        done_same = [r for r in s.exec(select(WorkflowRun).where(WorkflowRun.state == "done")).all()
+                     if r.site_domain == run.site_domain
+                     and (r.network_name or "").lower() == (run.network_name or "").lower()]
+        latest_done = max(done_same, key=lambda r: r.id) if done_same else None
         return {
             "run": {"id": run.id, "site": run.site_domain, "network": run.network_name,
                     "operation": run.operation, "kind": run.kind, "state": run.state,
-                    "unverified": _res.get("unverified") or []},
+                    "unverified": _res.get("unverified") or [],
+                    "is_latest_success": bool(latest_done and latest_done.id == run.id),
+                    "latest_success_id": latest_done.id if latest_done else None},
             "answers": [{"id": r.id, "page": r.page, "label": r.label, "field_key": r.field_key,
                          "value": r.value, "current_value": r.current_value, "status": r.status,
                          "source": r.source, "required": r.required, "changed": r.changed,

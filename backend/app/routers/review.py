@@ -62,6 +62,7 @@ _SIDE = """<div class="side">
  <a href="/admin/network/list">Networks</a>
  <a href="/admin/network-application/list">Network Applications</a>
  <a class="on" href="/review">✔ Approval Review</a>
+ <a href="/reliability">📊 Reliability</a>
  <a href="/admin/workflow-run/list">Workflow Runs</a>
  <a href="/admin/billing-profile/list">Billing Profiles</a>
  <a href="/admin/network-credential/list">Network Credentials</a>
@@ -79,17 +80,24 @@ _INDEX = ("<!doctype html><html><head><meta charset='utf-8'><title>Approval Revi
           " const el=document.getElementById('list');"
           " const runs=(d.runs||[]).filter(r=>r.kind==='apply');"
           " if(!runs.length){el.textContent='No sheets yet — Prepare one from Network Applications.';return}"
-          " el.innerHTML=runs.map(r=>`<div class='card2'><a class='link' href='/review/${r.id}'>"
+          # (JS) most recent successful (done) run per site/network is the re-run entry point
+          " const latest={};"
+          " runs.forEach(r=>{if(r.state==='done'){const k=(r.site+'|'+(r.network||'').toLowerCase());"
+          "   if(!latest[k]||r.id>latest[k])latest[k]=r.id;}});"
+          " const isLatest=r=>latest[r.site+'|'+(r.network||'').toLowerCase()]===r.id;"
+          " el.innerHTML=runs.map(r=>`<div class='card2'${isLatest(r)?\" style='border-color:#86efac;background:#f0fdf4'\":''}><a class='link' href='/review/${r.id}'>"
           "  <b>#${r.id}</b> ${r.site} → ${r.network}</a>"
           "  <span class='pill'>${r.plan?.operation||r.kind}</span>"
-          "  <span class='pill st'>${r.state}</span></div>`).join('');"
+          "  <span class='pill st'>${r.state}</span>"
+          "  ${isLatest(r)?\"<span class='pill' style='background:#dcfce7;color:#166534'>★ latest success</span>\":''}"
+          "  <a class='link' href='/reliability' style='margin-left:auto'>reliability ↗</a></div>`).join('');"
           "});</script></body></html>")
 
 _PAGE = ("<!doctype html><html><head><meta charset='utf-8'><title>Review run __RID__</title>"
          "<meta name='viewport' content='width=device-width, initial-scale=1'><style>" + _CSS +
          "</style></head><body><div class='shell'>" + _SIDE + """<div class="main">
  <div style="margin-bottom:14px"><a class="link" href="/review">← All approval sheets</a></div>
- <div class="top"><h1 id="title">Run __RID__</h1><span class="pill" id="op"></span><span class="pill st" id="state"></span></div>
+ <div class="top"><h1 id="title">Run __RID__</h1><span class="pill" id="op"></span><span class="pill st" id="state"></span><span class="pill" id="latest" style="display:none;background:#dcfce7;color:#166534">★ latest successful run</span></div>
  <div id="feed"></div>
  <div class="card" id="rows"></div>
  <div class="bar">
@@ -97,6 +105,7 @@ _PAGE = ("<!doctype html><html><head><meta charset='utf-8'><title>Review run __R
   <button class="act" id="b_approve" onclick="approve()">✅ Approve</button>
   <button class="act danger" id="ex_live" onclick="execLive()">Execute LIVE</button>
   <button class="act pri" id="b_new" onclick="prepareNew()" style="display:none" title="Opens a fresh editable sheet pre-filled from the current state — your last changes carry forward. Keeps this run as the record of what was submitted.">✏️ Edit &amp; re-run</button>
+  <span id="hint"></span>
   <span id="msg"></span>
  </div>
  <div id="out"></div>
@@ -142,7 +151,15 @@ async function load(){
  q('#b_save').disabled=!editable;
  q('#b_approve').disabled=!editable||st==='approved';   // nothing to approve once approved
  q('#ex_live').disabled=st!=='approved';                 // LIVE ONLY after an explicit approval
- q('#b_new').style.display=term?'inline-block':'none';   // re-run only from a finished run
+ // Re-run is ONLY offered from the MOST RECENT successful run — never from a failed/unverified
+ // attempt (that would carry a bad state forward) or a stale older success.
+ const canRerun=!!d.run.is_latest_success;
+ q('#latest').style.display=canRerun?'inline-block':'none';
+ q('#b_new').style.display=canRerun?'inline-block':'none';
+ const hint=q('#hint'); hint.innerHTML='';
+ if(term&&!canRerun&&d.run.latest_success_id){
+  hint.innerHTML=`↻ re-run from the <a class="link" href="/review/${d.run.latest_success_id}">latest successful run #${d.run.latest_success_id}</a>`;
+ }
  if(busy){msg('⏳ executing on the network — wait for it to finish');startPoll();}
  else{stopPoll();
   if(st==='unverified')msg('⚠ NOT CONFIRMED on the network'+((d.run.unverified||[]).length?': '+(d.run.unverified).join(', '):'')+' — the account did not show the new value(s). Click “Edit & re-run”.');
@@ -160,7 +177,9 @@ function renderFeed(d){
  f.style.display='block';
  f.innerHTML='<div class="feedhd">🔴 live · what the agent is doing on the network</div>'+
    acts.map(a=>`<div class="feedrow"><span class="fst ${a.status==='completed'?'ok':'mut'}">${a.status==='completed'?'✔':'…'}</span>${esc(a.reasoning||a.type||'')}</div>`).join('')+
-   (d.recording?`<div class="feedrow" style="margin-top:6px"><a class="link" href="${esc(d.recording)}" target="_blank">▶ open recording</a></div>`:'');
+   (d.recording
+     ? `<div class="feedrow" style="margin-top:6px"><a class="link" href="${esc(d.recording)}" target="_blank">▶ open recording</a> <span style="color:#64748b">(partial while running · full after it finishes)</span></div>`
+     : `<div class="feedrow" style="margin-top:6px;color:#64748b">▶ recording will appear shortly…</div>`);
  f.scrollTop=f.scrollHeight;
 }
 function startPoll(){
@@ -212,6 +231,67 @@ async function prepareNew(){
 function msg(t){q('#msg').textContent=t}
 load();
 </script></body></html>""")
+
+
+_REL_SIDE = _SIDE.replace('class="on" href="/review"', 'href="/review"') \
+                 .replace('href="/reliability"', 'class="on" href="/reliability"')
+
+_RELIABILITY = ("<!doctype html><html><head><meta charset='utf-8'><title>Reliability</title>"
+    "<meta name='viewport' content='width=device-width, initial-scale=1'><style>" + _CSS +
+    "table{width:100%;border-collapse:collapse;font-size:13.5px}"
+    "th,td{text-align:left;padding:10px 12px;border-top:1px solid #f0f1f3}"
+    "th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;border-top:0}"
+    "td.num{text-align:right;font-variant-numeric:tabular-nums}"
+    ".eng{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600}"
+    ".eng.script{background:#ecfdf5;color:#065f46}.eng.skyvern{background:#eff6ff;color:#1e40af}"
+    ".kpi{display:flex;gap:14px;margin-bottom:18px;flex-wrap:wrap}"
+    ".kpi .card2{flex-direction:column;align-items:flex-start;gap:2px;min-width:150px}"
+    ".kpi b{font-size:24px;color:#111827}.kpi span{font-size:12px;color:#6b7280}"
+    ".gd{color:#15803d;font-weight:600}.wn{color:#c2410c;font-weight:600}.rd{color:#b91c1c;font-weight:600}"
+    "</style></head><body><div class='shell'>" + _REL_SIDE + """<div class="main">
+ <div class="top"><h1>Reliability</h1><span class="pill">head / tail scorecard</span></div>
+ <div id="kpi" class="kpi"></div>
+ <div class="card"><table id="tbl"><thead><tr>
+   <th>Network</th><th>Engine</th><th class='num'>Runs</th><th class='num'>Verified</th>
+   <th class='num'>No-op</th><th class='num'>Unverified</th><th class='num'>Failed</th>
+   <th class='num'>Success</th><th class='num'>Indep. verify</th><th class='num'>Avg time</th>
+ </tr></thead><tbody id="body"></tbody></table></div>
+ <div class="note mut" style="margin-top:14px">
+  <b>Success</b> = verified + no-op (nothing to change). <b>Indep. verify</b> = we read the live
+  account ourselves (deterministic) rather than trusting the agent's word — script engines are
+  100% independent by construction. Skyvern rows fall back to the agent's read-back only when we
+  have no script-reader for that network.
+ </div>
+</div></div>
+<script>
+const esc=s=>(s??'').toString().replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));
+const pc=p=>p>=90?'gd':p>=60?'wn':'rd';
+fetch('/api/workflows/reliability').then(r=>r.json()).then(d=>{
+ const t=d.totals||{};
+ document.getElementById('kpi').innerHTML=
+  `<div class='card2'><b>${t.runs||0}</b><span>live executions</span></div>`+
+  `<div class='card2'><b class='${pc(t.success_pct||0)}'>${t.success_pct||0}%</b><span>overall success</span></div>`+
+  `<div class='card2'><b>${t.networks||0}</b><span>networks</span></div>`;
+ const rows=d.rows||[];
+ const body=document.getElementById('body');
+ if(!rows.length){body.innerHTML="<tr><td colspan='10' class='mut' style='padding:18px'>No live executions yet.</td></tr>";return;}
+ body.innerHTML=rows.map(r=>`<tr>
+   <td><a class='link' href='/review/${r.last_run}'>${esc(r.network)}</a></td>
+   <td><span class='eng ${r.engine}'>${r.engine}</span></td>
+   <td class='num'>${r.runs}</td>
+   <td class='num'>${r.verified||''}</td><td class='num'>${r.noop||''}</td>
+   <td class='num ${r.unverified?'wn':''}'>${r.unverified||''}</td>
+   <td class='num ${r.failed?'rd':''}'>${r.failed||''}</td>
+   <td class='num ${pc(r.success_pct)}'>${r.success_pct}%</td>
+   <td class='num'>${r.independent_pct}%</td>
+   <td class='num'>${r.avg_secs!=null?r.avg_secs+'s':'—'}</td></tr>`).join('');
+});
+</script></body></html>""")
+
+
+@router.get("/reliability", response_class=HTMLResponse)
+def reliability_page():
+    return _RELIABILITY
 
 
 @router.get("/review", response_class=HTMLResponse)

@@ -87,8 +87,7 @@ def execute_run(run_id: int, actor: str, force_live: bool = False) -> dict:
     """Execute an approved prepared run by submitting the SHEET verbatim (WYSIWYG): the
     field->value map comes from the run's RunAnswer rows, NOT re-derived from Billing Profile.
     Dry-run unless force_live. Create -> signup page; update -> profile/settings page."""
-    from . import pipeline, skyvern
-    from .discovery import _entry_url
+    from . import executor, pipeline
     with Session(engine) as s:
         run = s.get(WorkflowRun, run_id)
         if not run:
@@ -96,7 +95,7 @@ def execute_run(run_id: int, actor: str, force_live: bool = False) -> dict:
         # State gate: LIVE requires an explicit approval; terminal/in-flight runs are blocked.
         if run.state in ("executing", "running"):
             return {"error": "a run is already executing — wait for it to finish"}
-        if run.state in ("done", "failed", "rejected"):
+        if run.state in ("done", "failed", "rejected", "unverified"):
             return {"error": f"run is '{run.state}' — prepare a fresh sheet to run again"}
         if force_live and run.state != "approved":
             return {"error": "approve the sheet before you Execute LIVE"}
@@ -130,21 +129,39 @@ def execute_run(run_id: int, actor: str, force_live: bool = False) -> dict:
         return {"workflow_id": run_id, "mode": "NOOP",
                 "note": "nothing to change — the account already matches"}
 
-    entry = (_entry_url(run.network_name) if operation == "update"
-             else skyvern.signup_url_for(run.network_name))
-    result = skyvern.submit_fill(operation, run.site_domain, run.network_name, fields,
-                                 entry, holding_company=hc, force_live=force_live)
+    # Route to the best executor: deterministic script (head networks) or Skyvern (tail).
+    result = executor.execute(operation, run.site_domain, run.network_name, fields, hc,
+                              force_live=force_live)
+    eng = result.get("engine")
+    live = result.get("mode") == "LIVE"
 
     with Session(engine) as s:
         run = s.get(WorkflowRun, run_id)
         run.result = json.dumps(result)
-        run.state = "executing" if result.get("mode") == "LIVE" else "approved"
+        if eng == "script" and live:
+            # Deterministic path is SYNCHRONOUS and already verified (it reloaded + read back).
+            run.state = "done" if result.get("fully_verified") else "unverified"
+        elif live:
+            run.state = "executing"   # Skyvern is async — finalize_execute confirms it later
+        else:
+            run.state = "approved"    # dry-run
         s.add(run)
         s.add(AuditLog(actor=actor, actor_kind="human" if force_live else "agent",
                        action=("apply.executed" if force_live else "apply.execute_dryrun"),
                        target=f"{run.site_domain}:{run.network_name}",
-                       detail=json.dumps({"mode": result.get("mode"), "operation": operation})))
+                       detail=json.dumps({"engine": eng, "mode": result.get("mode"),
+                                          "verified": result.get("verified")})))
         s.commit()
+
+    # Deterministic path already verified against reality → converge the confirmed fields now.
+    if eng == "script" and live:
+        verified_fields = {k: fields[k] for k in (result.get("verified") or []) if k in fields}
+        if verified_fields:
+            pipeline.write_back(run_id, verified_fields, actor)
+        return {"workflow_id": run_id, "operation": operation, "mode": "LIVE", "engine": "script",
+                "verified": result.get("verified"), "unverified": result.get("unverified"),
+                "seconds": result.get("seconds"), "result": result}
+
     return {"workflow_id": run_id, "operation": operation, "mode": result.get("mode"),
             "result": result}
 
@@ -163,6 +180,9 @@ def finalize_execute(run_id: int, actor: str = "system") -> dict:
             return {"error": "workflow not found"}
         result = json.loads(run.result or "{}")
         operation = run.operation or "create"
+        network_name = run.network_name
+        site = s.exec(select(Site).where(Site.domain == run.site_domain)).first()
+        holding_company = site.holding_company if site else None
     rid = result.get("run_id")
     if not rid:
         return {"error": "no Skyvern run_id — this run wasn't executed live"}
@@ -225,19 +245,31 @@ def finalize_execute(run_id: int, actor: str = "system") -> dict:
         return {"run_id": rid, "status": "unverified", "written_back": False,
                 "reason": "Submit was never clicked"}
 
-    # GUARDRAIL 2 — the agent's post-save read-back (weaker; can be fooled if it didn't reload).
-    # Kept as a second signal; the authoritative check is the independent verify-read (see below).
-
     def _norm(x):
         return str(x if x is not None else "").strip().lower()
 
-    saved = {}
-    ei = t.get("extracted_information") or {}
-    if isinstance(ei, list):
-        ei = ei[0] if (ei and isinstance(ei[0], dict)) else {}
-    for it in (ei.get("saved_fields") or []):
-        if isinstance(it, dict) and it.get("key"):
-            saved[it["key"]] = it.get("persisted_value")
+    # GUARDRAIL 2 — AUTHORITATIVE VERIFY: independently read the LIVE account ourselves via a
+    # deterministic script-reader (executor-agnostic — it verifies a Skyvern write just the same).
+    # A plain browser reloads + reads the real persisted value; it never lies, unlike the agent's
+    # self-report. If we have no script-reader for this network, fall back to the agent's read-back.
+    from . import executor
+    saved, verify_source = None, None
+    try:
+        saved = executor.verify_read(network_name, holding_company, list(submitted.keys()))
+    except Exception:  # noqa: BLE001
+        saved = None
+    if saved is not None:
+        verify_source = "independent-read"
+    else:
+        # Fallback — the agent's post-save read-back (weaker; can be fooled if it didn't reload).
+        saved = {}
+        ei = t.get("extracted_information") or {}
+        if isinstance(ei, list):
+            ei = ei[0] if (ei and isinstance(ei[0], dict)) else {}
+        for it in (ei.get("saved_fields") or []):
+            if isinstance(it, dict) and it.get("key"):
+                saved[it["key"]] = it.get("persisted_value")
+        verify_source = "agent-readback"
 
     verified = {k: v for k, v in submitted.items() if k in saved and _norm(saved[k]) == _norm(v)}
     unverified = {k: v for k, v in submitted.items() if k not in verified}
@@ -245,7 +277,7 @@ def finalize_execute(run_id: int, actor: str = "system") -> dict:
     # Converge our records ONLY for fields we actually confirmed persisted.
     wb = pipeline.write_back(run_id, verified, actor)
 
-    # Fully verified only if the agent read something back AND everything matched.
+    # Fully verified only if we read something back AND everything matched.
     fully = bool(saved) and not unverified
     final_state = "done" if fully else "unverified"
     with Session(engine) as s:
@@ -254,6 +286,7 @@ def finalize_execute(run_id: int, actor: str = "system") -> dict:
         result["verified"] = sorted(verified.keys())
         result["unverified"] = sorted(unverified.keys())
         result["read_back"] = saved
+        result["verify_source"] = verify_source
         run.result = json.dumps(result)
         run.state = final_state
         if operation == "create" and fully:
